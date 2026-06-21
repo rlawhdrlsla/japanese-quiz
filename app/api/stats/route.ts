@@ -1,52 +1,72 @@
-import { NextResponse } from 'next/server';
-import { getDb, getCurrentRound } from '@/lib/db';
-import { Word, QuizSession } from '@/lib/types';
+import { NextRequest, NextResponse } from 'next/server';
+import { getDb } from '@/lib/db';
+import { Word, QuizSession, UserState } from '@/lib/types';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     const db = getDb();
+    const user_id = parseInt(req.nextUrl.searchParams.get('user_id') ?? '0');
 
-    const totalWords = (db.prepare('SELECT COUNT(*) as count FROM words').get() as { count: number }).count;
-    const totalSessions = (db.prepare('SELECT COUNT(*) as count FROM quiz_sessions WHERE completed_at IS NOT NULL').get() as { count: number }).count;
+    if (!user_id) {
+      return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 });
+    }
 
-    const accuracyRow = db.prepare(
-      'SELECT SUM(total_correct) as correct, SUM(total_attempts) as attempts FROM words'
-    ).get() as { correct: number; attempts: number };
-    const overallAccuracy = accuracyRow.attempts > 0
-      ? Math.round((accuracyRow.correct / accuracyRow.attempts) * 100)
+    db.prepare('INSERT OR IGNORE INTO user_state (user_id) VALUES (?)').run(user_id);
+    const userState = db.prepare('SELECT * FROM user_state WHERE user_id = ?').get(user_id) as UserState;
+    const seenIds: number[] = JSON.parse(userState.cycle_seen_ids || '[]');
+
+    const totalWords = (db.prepare('SELECT COUNT(*) as c FROM words').get() as { c: number }).c;
+    const totalSessions = (db.prepare(
+      'SELECT COUNT(*) as c FROM quiz_sessions WHERE completed_at IS NOT NULL AND user_id = ?'
+    ).get(user_id) as { c: number }).c;
+
+    // Per-user accuracy
+    const accRow = db.prepare(
+      'SELECT SUM(total_correct) as correct, SUM(total_attempts) as attempts FROM user_word_stats WHERE user_id = ?'
+    ).get(user_id) as { correct: number; attempts: number };
+    const overallAccuracy = accRow?.attempts > 0
+      ? Math.round((accRow.correct / accRow.attempts) * 100)
       : 0;
 
-    // Words with at least 1 attempt, sorted by accuracy ascending (weak words first)
-    const weakWords = db.prepare(
-      `SELECT * FROM words
-       WHERE total_attempts > 0
-       ORDER BY CAST(total_correct AS FLOAT) / total_attempts ASC
-       LIMIT 5`
-    ).all() as Word[];
+    // Weak words: lowest accuracy, min 1 attempt
+    const weakWords = db.prepare(`
+      SELECT w.*, uws.total_correct, uws.total_attempts
+      FROM words w
+      JOIN user_word_stats uws ON uws.word_id = w.id AND uws.user_id = ?
+      WHERE uws.total_attempts > 0
+      ORDER BY CAST(uws.total_correct AS FLOAT) / uws.total_attempts ASC
+      LIMIT 5
+    `).all(user_id) as Word[];
 
-    const strongWords = db.prepare(
-      `SELECT * FROM words
-       WHERE total_attempts > 0
-       ORDER BY CAST(total_correct AS FLOAT) / total_attempts DESC
-       LIMIT 5`
-    ).all() as Word[];
+    const strongWords = db.prepare(`
+      SELECT w.*, uws.total_correct, uws.total_attempts
+      FROM words w
+      JOIN user_word_stats uws ON uws.word_id = w.id AND uws.user_id = ?
+      WHERE uws.total_attempts > 0
+      ORDER BY CAST(uws.total_correct AS FLOAT) / uws.total_attempts DESC
+      LIMIT 5
+    `).all(user_id) as Word[];
 
     const recentSessions = db.prepare(
-      'SELECT * FROM quiz_sessions WHERE completed_at IS NOT NULL ORDER BY created_at DESC LIMIT 10'
-    ).all() as QuizSession[];
+      'SELECT * FROM quiz_sessions WHERE completed_at IS NOT NULL AND user_id = ? ORDER BY created_at DESC LIMIT 10'
+    ).all(user_id) as QuizSession[];
 
-    const categoryStats = db.prepare(
-      `SELECT category, COUNT(*) as count,
-       CASE WHEN SUM(total_attempts) > 0
-            THEN ROUND(CAST(SUM(total_correct) AS FLOAT) / SUM(total_attempts) * 100)
-            ELSE 0 END as accuracy
-       FROM words GROUP BY category ORDER BY category`
-    ).all() as { category: string; count: number; accuracy: number }[];
+    // Category stats from per-user data
+    const categoryStats = db.prepare(`
+      SELECT w.category, COUNT(DISTINCT w.id) as count,
+        CASE WHEN SUM(uws.total_attempts) > 0
+          THEN ROUND(CAST(SUM(uws.total_correct) AS FLOAT) / SUM(uws.total_attempts) * 100)
+          ELSE 0 END as accuracy
+      FROM words w
+      LEFT JOIN user_word_stats uws ON uws.word_id = w.id AND uws.user_id = ?
+      GROUP BY w.category ORDER BY w.category
+    `).all(user_id) as { category: string; count: number; accuracy: number }[];
 
-    const currentRound = getCurrentRound();
     const cooldownWords = (db.prepare(
-      'SELECT COUNT(*) as count FROM words WHERE skip_until_round > ?'
-    ).get(currentRound) as { count: number }).count;
+      'SELECT COUNT(*) as c FROM user_word_stats WHERE user_id = ? AND skip_until_round > ?'
+    ).get(user_id, userState.current_round) as { c: number }).c;
+
+    const totalRoundsInCycle = totalWords > 0 ? Math.ceil(totalWords / 10) : 0;
 
     return NextResponse.json({
       totalWords,
@@ -56,8 +76,10 @@ export async function GET() {
       strongWords,
       recentSessions,
       categoryStats,
-      currentRound,
+      currentRound: userState.current_round,
       cooldownWords,
+      cycleSeenCount: seenIds.length,
+      totalRoundsInCycle,
     });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });

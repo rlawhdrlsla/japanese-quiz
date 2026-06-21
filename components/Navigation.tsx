@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useUser } from '@/context/UserContext';
 
 const navItems = [
   { href: '/', label: '홈', icon: (
@@ -29,6 +30,7 @@ const navItems = [
 
 export default function Navigation() {
   const pathname = usePathname();
+  const { user, logout } = useUser();
 
   return (
     <>
@@ -40,7 +42,7 @@ export default function Navigation() {
               <span className="text-lg">🌸</span>
               <span className="font-bold text-white">일본어 퀴즈</span>
             </Link>
-            <div className="flex gap-1">
+            <div className="flex items-center gap-1">
               {navItems.map((item) => (
                 <Link
                   key={item.href}
@@ -55,6 +57,14 @@ export default function Navigation() {
                   <span>{item.label}</span>
                 </Link>
               ))}
+              {user && (
+                <button
+                  onClick={logout}
+                  className="ml-2 text-xs text-slate-600 hover:text-slate-400 transition-colors"
+                >
+                  {user.username} · 로그아웃
+                </button>
+              )}
             </div>
           </div>
         </div>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useUser } from '@/context/UserContext';
 import { Word, QuizSession } from '@/lib/types';
 
 interface StatsData {
@@ -13,19 +14,31 @@ interface StatsData {
   categoryStats: { category: string; count: number; accuracy: number }[];
   currentRound: number;
   cooldownWords: number;
+  cycleSeenCount: number;
+  totalRoundsInCycle: number;
 }
 
 export default function HistoryPage() {
+  const { user } = useUser();
   const [stats, setStats] = useState<StatsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<'overview' | 'weak' | 'strong'>('overview');
 
   useEffect(() => {
-    fetch('/api/stats')
+    if (!user) { setLoading(false); return; }
+    fetch(`/api/stats?user_id=${user.user_id}`)
       .then(r => r.json())
       .then(data => { setStats(data); setLoading(false); })
       .catch(() => setLoading(false));
-  }, []);
+  }, [user]);
+
+  if (!user) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <p className="text-slate-500 text-sm">로그인 후 이용 가능합니다</p>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -48,7 +61,10 @@ export default function HistoryPage() {
 
   return (
     <div className="space-y-5">
-      <h1 className="text-xl font-bold text-white">통계</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-bold text-white">통계</h1>
+        <span className="text-sm text-slate-500">{user.username}</span>
+      </div>
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 gap-3">
@@ -73,6 +89,22 @@ export default function HistoryPage() {
         </div>
       </div>
 
+      {/* Cycle progress */}
+      <div className="bg-slate-800 border border-slate-700/50 rounded-xl p-4">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm font-medium text-white">사이클 진행</span>
+          <span className="text-xs text-slate-500">
+            {stats.cycleSeenCount}/{stats.totalWords}단어 · {stats.totalRoundsInCycle}라운드/사이클
+          </span>
+        </div>
+        <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
+          <div
+            className="h-full bg-pink-500 rounded-full transition-all"
+            style={{ width: stats.totalWords > 0 ? `${(stats.cycleSeenCount / stats.totalWords) * 100}%` : '0%' }}
+          />
+        </div>
+      </div>
+
       {/* Tabs */}
       <div className="flex gap-1 bg-slate-800 border border-slate-700/50 rounded-xl p-1">
         {(['overview', 'weak', 'strong'] as const).map(t => (
@@ -80,9 +112,7 @@ export default function HistoryPage() {
             key={t}
             onClick={() => setTab(t)}
             className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${
-              tab === t
-                ? 'bg-slate-700 text-white'
-                : 'text-slate-500 hover:text-slate-300'
+              tab === t ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300'
             }`}
           >
             {t === 'overview' ? '카테고리' : t === 'weak' ? '취약 단어' : '강한 단어'}
@@ -90,13 +120,10 @@ export default function HistoryPage() {
         ))}
       </div>
 
-      {/* Overview Tab */}
       {tab === 'overview' && (
         <div className="space-y-3">
           {stats.categoryStats.length === 0 ? (
-            <div className="text-center py-12 text-slate-600 text-sm">
-              아직 퀴즈 데이터가 없습니다
-            </div>
+            <div className="text-center py-12 text-slate-600 text-sm">아직 퀴즈 데이터가 없습니다</div>
           ) : (
             <>
               {stats.categoryStats.map(cat => (
@@ -113,7 +140,7 @@ export default function HistoryPage() {
                   </div>
                   <div className="bg-slate-700/50 rounded-full h-1.5">
                     <div
-                      className={`h-1.5 rounded-full transition-all ${
+                      className={`h-1.5 rounded-full ${
                         cat.accuracy >= 70 ? 'bg-emerald-400' :
                         cat.accuracy >= 40 ? 'bg-amber-400' : 'bg-rose-400'
                       }`}
@@ -123,7 +150,6 @@ export default function HistoryPage() {
                 </div>
               ))}
 
-              {/* Recent Sessions */}
               {stats.recentSessions.length > 0 && (
                 <div className="bg-slate-800 border border-slate-700/50 rounded-xl p-4 mt-2">
                   <h2 className="text-sm font-semibold text-slate-300 mb-3">최근 퀴즈 기록</h2>
@@ -134,10 +160,7 @@ export default function HistoryPage() {
                         : 0;
                       const date = new Date(session.created_at);
                       return (
-                        <div
-                          key={session.id}
-                          className="flex items-center justify-between py-3 border-b border-slate-700/30 last:border-0"
-                        >
+                        <div key={session.id} className="flex items-center justify-between py-3 border-b border-slate-700/30 last:border-0">
                           <div>
                             <span className="text-sm font-medium text-white">Round {session.round_number}</span>
                             <span className="text-xs text-slate-600 ml-2">
@@ -165,87 +188,59 @@ export default function HistoryPage() {
         </div>
       )}
 
-      {/* Weak Words Tab */}
       {tab === 'weak' && (
         <div className="space-y-2">
           {stats.weakWords.length === 0 ? (
-            <div className="text-center py-12 text-slate-600 text-sm">
-              아직 데이터가 없습니다. 퀴즈를 먼저 풀어보세요!
-            </div>
-          ) : (
-            stats.weakWords.map(word => {
-              const acc = accuracyOf(word);
-              return (
-                <div key={word.id} className="bg-slate-800 border border-rose-500/10 rounded-xl p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="flex items-baseline gap-2">
-                        <span className="font-semibold text-white">{word.japanese}</span>
-                        {word.reading && <span className="text-xs text-slate-500">({word.reading})</span>}
-                      </div>
-                      <div className="text-sm text-slate-400 mt-0.5">{word.korean}</div>
-                      <div className="text-xs text-slate-600 mt-1">
-                        {word.total_correct}/{word.total_attempts}회 정답 · {word.category}
-                      </div>
+            <div className="text-center py-12 text-slate-600 text-sm">아직 데이터가 없습니다. 퀴즈를 먼저 풀어보세요!</div>
+          ) : stats.weakWords.map(word => {
+            const acc = accuracyOf(word);
+            return (
+              <div key={word.id} className="bg-slate-800 border border-rose-500/10 rounded-xl p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="flex items-baseline gap-2">
+                      <span className="font-semibold text-white">{word.japanese}</span>
+                      {word.reading && <span className="text-xs text-slate-500">({word.reading})</span>}
                     </div>
-                    <div className={`text-2xl font-bold ${
-                      acc < 30 ? 'text-rose-400' :
-                      acc < 60 ? 'text-amber-400' :
-                      'text-yellow-400'
-                    }`}>{acc}%</div>
+                    <div className="text-sm text-slate-400 mt-0.5">{word.korean}</div>
+                    <div className="text-xs text-slate-600 mt-1">{word.total_correct}/{word.total_attempts}회 · {word.category}</div>
                   </div>
-                  <div className="mt-3 bg-slate-700/50 rounded-full h-1.5">
-                    <div
-                      className={`h-1.5 rounded-full ${
-                        acc < 30 ? 'bg-rose-400' :
-                        acc < 60 ? 'bg-amber-400' :
-                        'bg-yellow-400'
-                      }`}
-                      style={{ width: `${acc}%` }}
-                    />
-                  </div>
+                  <div className={`text-2xl font-bold ${acc < 30 ? 'text-rose-400' : acc < 60 ? 'text-amber-400' : 'text-yellow-400'}`}>{acc}%</div>
                 </div>
-              );
-            })
-          )}
+                <div className="mt-3 bg-slate-700/50 rounded-full h-1.5">
+                  <div className={`h-1.5 rounded-full ${acc < 30 ? 'bg-rose-400' : acc < 60 ? 'bg-amber-400' : 'bg-yellow-400'}`} style={{ width: `${acc}%` }} />
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
-      {/* Strong Words Tab */}
       {tab === 'strong' && (
         <div className="space-y-2">
           {stats.strongWords.length === 0 ? (
-            <div className="text-center py-12 text-slate-600 text-sm">
-              아직 데이터가 없습니다. 퀴즈를 먼저 풀어보세요!
-            </div>
-          ) : (
-            stats.strongWords.map(word => {
-              const acc = accuracyOf(word);
-              return (
-                <div key={word.id} className="bg-slate-800 border border-emerald-500/10 rounded-xl p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="flex items-baseline gap-2">
-                        <span className="font-semibold text-white">{word.japanese}</span>
-                        {word.reading && <span className="text-xs text-slate-500">({word.reading})</span>}
-                      </div>
-                      <div className="text-sm text-slate-400 mt-0.5">{word.korean}</div>
-                      <div className="text-xs text-slate-600 mt-1">
-                        {word.total_correct}/{word.total_attempts}회 정답 · {word.category}
-                      </div>
+            <div className="text-center py-12 text-slate-600 text-sm">아직 데이터가 없습니다. 퀴즈를 먼저 풀어보세요!</div>
+          ) : stats.strongWords.map(word => {
+            const acc = accuracyOf(word);
+            return (
+              <div key={word.id} className="bg-slate-800 border border-emerald-500/10 rounded-xl p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="flex items-baseline gap-2">
+                      <span className="font-semibold text-white">{word.japanese}</span>
+                      {word.reading && <span className="text-xs text-slate-500">({word.reading})</span>}
                     </div>
-                    <div className="text-2xl font-bold text-emerald-400">{acc}%</div>
+                    <div className="text-sm text-slate-400 mt-0.5">{word.korean}</div>
+                    <div className="text-xs text-slate-600 mt-1">{word.total_correct}/{word.total_attempts}회 · {word.category}</div>
                   </div>
-                  <div className="mt-3 bg-slate-700/50 rounded-full h-1.5">
-                    <div
-                      className="h-1.5 rounded-full bg-emerald-400"
-                      style={{ width: `${acc}%` }}
-                    />
-                  </div>
+                  <div className="text-2xl font-bold text-emerald-400">{acc}%</div>
                 </div>
-              );
-            })
-          )}
+                <div className="mt-3 bg-slate-700/50 rounded-full h-1.5">
+                  <div className="h-1.5 rounded-full bg-emerald-400" style={{ width: `${acc}%` }} />
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

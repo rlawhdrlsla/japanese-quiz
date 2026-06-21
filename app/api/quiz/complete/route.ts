@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb, getCurrentRound } from '@/lib/db';
+import { getDb } from '@/lib/db';
+import { UserState } from '@/lib/types';
 
 interface AnswerInput {
   word_id: number;
-  user_answer: string;
   is_correct: boolean;
 }
 
@@ -11,35 +11,41 @@ export async function POST(req: NextRequest) {
   try {
     const db = getDb();
     const body = await req.json();
-    const { session_id, answers }: { session_id: number; answers: AnswerInput[] } = body;
+    const { session_id, user_id, answers }: { session_id: number; user_id: number; answers: AnswerInput[] } = body;
 
-    if (!session_id || !Array.isArray(answers)) {
+    if (!session_id || !user_id || !Array.isArray(answers)) {
       return NextResponse.json({ error: '잘못된 요청입니다.' }, { status: 400 });
     }
 
-    const currentRound = getCurrentRound();
+    const userState = db.prepare('SELECT current_round FROM user_state WHERE user_id = ?').get(user_id) as UserState | undefined;
+    const currentRound = userState?.current_round ?? 0;
+
     const correctCount = answers.filter(a => a.is_correct).length;
-
-    const insertAnswer = db.prepare(
-      'INSERT INTO quiz_answers (session_id, word_id, user_answer, is_correct) VALUES (?, ?, ?, ?)'
-    );
-
-    const updateWordCorrect = db.prepare(
-      'UPDATE words SET total_correct = total_correct + 1, total_attempts = total_attempts + 1 WHERE id = ?'
-    );
-
-    const updateWordWrong = db.prepare(
-      'UPDATE words SET total_attempts = total_attempts + 1, skip_until_round = ? WHERE id = ?'
-    );
 
     const transaction = db.transaction(() => {
       for (const answer of answers) {
-        insertAnswer.run(session_id, answer.word_id, answer.user_answer, answer.is_correct ? 1 : 0);
+        db.prepare(`
+          INSERT INTO quiz_answers (session_id, word_id, user_answer, is_correct)
+          VALUES (?, ?, '', ?)
+        `).run(session_id, answer.word_id, answer.is_correct ? 1 : 0);
+
         if (answer.is_correct) {
-          updateWordCorrect.run(answer.word_id);
+          db.prepare(`
+            INSERT INTO user_word_stats (user_id, word_id, total_correct, total_attempts)
+            VALUES (?, ?, 1, 1)
+            ON CONFLICT(user_id, word_id) DO UPDATE SET
+              total_correct = total_correct + 1,
+              total_attempts = total_attempts + 1,
+              skip_until_round = 0
+          `).run(user_id, answer.word_id);
         } else {
-          // Skip next 1 round: if current is round N, skip N+1, reappear at N+2
-          updateWordWrong.run(currentRound + 2, answer.word_id);
+          db.prepare(`
+            INSERT INTO user_word_stats (user_id, word_id, skip_until_round, total_attempts)
+            VALUES (?, ?, ?, 1)
+            ON CONFLICT(user_id, word_id) DO UPDATE SET
+              skip_until_round = ?,
+              total_attempts = total_attempts + 1
+          `).run(user_id, answer.word_id, currentRound + 2, currentRound + 2);
         }
       }
 

@@ -60,7 +60,39 @@ function initSchema(db: Database.Database) {
     );
 
     INSERT OR IGNORE INTO app_state (key, value) VALUES ('current_round', '0');
+
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT UNIQUE NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS user_state (
+      user_id INTEGER PRIMARY KEY,
+      current_round INTEGER DEFAULT 0,
+      cycle_seen_ids TEXT DEFAULT '[]',
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS user_word_stats (
+      user_id INTEGER NOT NULL,
+      word_id INTEGER NOT NULL,
+      skip_until_round INTEGER DEFAULT 0,
+      total_correct INTEGER DEFAULT 0,
+      total_attempts INTEGER DEFAULT 0,
+      PRIMARY KEY (user_id, word_id),
+      FOREIGN KEY (user_id) REFERENCES users(id),
+      FOREIGN KEY (word_id) REFERENCES words(id)
+    );
   `);
+
+  // Add user_id column to quiz_sessions if not exists
+  try {
+    db.exec('ALTER TABLE quiz_sessions ADD COLUMN user_id INTEGER REFERENCES users(id)');
+  } catch {
+    // Column already exists
+  }
 }
 
 export function getCurrentRound(): number {
@@ -75,4 +107,13 @@ export function incrementRound(): number {
   const next = current + 1;
   db.prepare('UPDATE app_state SET value = ? WHERE key = ?').run(String(next), 'current_round');
   return next;
+}
+
+export function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
 }

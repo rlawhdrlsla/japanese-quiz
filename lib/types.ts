@@ -15,6 +15,7 @@ export interface QuizSession {
   round_number: number;
   total_questions: number;
   correct_count: number;
+  user_id: number | null;
   created_at: string;
   completed_at: string | null;
 }
@@ -28,17 +29,23 @@ export interface QuizAnswer {
   created_at: string;
 }
 
-export interface QuizWord extends Word {
-  userAnswer?: string;
-  isCorrect?: boolean | null;
+export interface User {
+  id: number;
+  username: string;
+  created_at: string;
 }
 
-export interface StatsData {
-  totalWords: number;
-  totalSessions: number;
-  overallAccuracy: number;
-  weakWords: Word[];
-  strongWords: Word[];
-  recentSessions: (QuizSession & { words: string[] })[];
-  categoryStats: { category: string; count: number; accuracy: number }[];
+export interface UserState {
+  user_id: number;
+  current_round: number;
+  cycle_seen_ids: string;
+  updated_at: string;
+}
+
+export interface UserWordStat {
+  user_id: number;
+  word_id: number;
+  skip_until_round: number;
+  total_correct: number;
+  total_attempts: number;
 }
