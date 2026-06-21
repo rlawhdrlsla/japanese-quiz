@@ -1,7 +1,9 @@
 @import "tailwindcss";
 
 body {
-  color: #171717;
+  background-color: #07090f;
+  color: #e2e8f0;
+  -webkit-font-smoothing: antialiased;
 }
 
 input[type="text"],
@@ -14,5 +16,9 @@ select {
 input:focus,
 textarea:focus,
 select:focus {
-  box-shadow: 0 0 0 2px #f9a8d4;
+  box-shadow: 0 0 0 2px rgba(236, 72, 153, 0.35);
+}
+
+::selection {
+  background-color: rgba(236, 72, 153, 0.3);
 }

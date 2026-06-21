@@ -25,74 +25,101 @@ export default function Home() {
   }, []);
 
   return (
-    <div className="space-y-6">
-      <div className="text-center py-4">
-        <h1 className="text-3xl font-bold text-pink-700">🌸 일본어 퀴즈</h1>
-        <p className="text-gray-500 mt-1 text-sm">꾸준히 공부해서 일본어 마스터!</p>
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="pt-2">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-2xl">🌸</span>
+          <h1 className="text-2xl font-bold text-white">일본어 퀴즈</h1>
+        </div>
+        <p className="text-slate-500 text-sm pl-1">꾸준히 공부해서 일본어 마스터</p>
       </div>
 
       {/* Quick Actions */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-3">
         <Link
           href="/quiz"
-          className="bg-pink-500 hover:bg-pink-600 text-white rounded-2xl p-6 text-center transition-colors shadow-md"
+          className="relative overflow-hidden bg-gradient-to-br from-pink-600 to-pink-700 hover:from-pink-500 hover:to-pink-600 text-white rounded-2xl p-5 transition-all active:scale-[0.98] shadow-lg shadow-pink-900/30"
         >
-          <div className="text-4xl mb-2">✏️</div>
-          <div className="font-bold text-lg">퀴즈 시작</div>
-          <div className="text-pink-100 text-sm mt-1">랜덤 10문항</div>
+          <div className="text-3xl mb-3">🎯</div>
+          <div className="font-bold text-lg leading-tight">퀴즈 시작</div>
+          <div className="text-pink-200 text-xs mt-1">랜덤 10문항</div>
+          <div className="absolute -right-3 -bottom-3 text-6xl opacity-10 rotate-12">🎯</div>
         </Link>
         <Link
           href="/words"
-          className="bg-white hover:bg-pink-50 text-pink-700 border-2 border-pink-200 rounded-2xl p-6 text-center transition-colors shadow-sm"
+          className="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white rounded-2xl p-5 transition-all active:scale-[0.98]"
         >
-          <div className="text-4xl mb-2">📖</div>
-          <div className="font-bold text-lg">단어 관리</div>
-          <div className="text-gray-400 text-sm mt-1">추가 / 수정 / 삭제</div>
+          <div className="text-3xl mb-3">📖</div>
+          <div className="font-bold text-lg leading-tight">단어장</div>
+          <div className="text-slate-400 text-xs mt-1">추가 · 수정 · 삭제</div>
         </Link>
       </div>
 
-      {/* Stats Cards */}
+      {/* Stats */}
       {loading ? (
-        <div className="text-center py-8 text-gray-400">불러오는 중...</div>
+        <div className="flex items-center justify-center py-10">
+          <div className="text-slate-600 text-sm">불러오는 중...</div>
+        </div>
       ) : stats ? (
         <>
-          <div className="grid grid-cols-3 gap-3">
-            <div className="bg-white rounded-2xl p-4 text-center shadow-sm border border-pink-100">
-              <div className="text-2xl font-bold text-pink-600">{stats.totalWords}</div>
-              <div className="text-xs text-gray-500 mt-1">등록 단어</div>
+          {/* Numbers */}
+          <div className="grid grid-cols-3 gap-2.5">
+            <div className="bg-slate-800 border border-slate-700/50 rounded-xl p-4 text-center">
+              <div className="text-2xl font-bold text-white">{stats.totalWords}</div>
+              <div className="text-xs text-slate-500 mt-1">등록 단어</div>
             </div>
-            <div className="bg-white rounded-2xl p-4 text-center shadow-sm border border-pink-100">
-              <div className="text-2xl font-bold text-purple-600">{stats.totalSessions}</div>
-              <div className="text-xs text-gray-500 mt-1">완료 퀴즈</div>
+            <div className="bg-slate-800 border border-slate-700/50 rounded-xl p-4 text-center">
+              <div className="text-2xl font-bold text-violet-400">{stats.totalSessions}</div>
+              <div className="text-xs text-slate-500 mt-1">완료 퀴즈</div>
             </div>
-            <div className="bg-white rounded-2xl p-4 text-center shadow-sm border border-pink-100">
-              <div className="text-2xl font-bold text-emerald-600">{stats.overallAccuracy}%</div>
-              <div className="text-xs text-gray-500 mt-1">전체 정답률</div>
+            <div className="bg-slate-800 border border-slate-700/50 rounded-xl p-4 text-center">
+              <div className="text-2xl font-bold text-emerald-400">{stats.overallAccuracy}%</div>
+              <div className="text-xs text-slate-500 mt-1">정답률</div>
             </div>
           </div>
 
-          {/* Weak Words */}
+          {/* Round & Cooldown */}
+          <div className="flex items-center justify-between bg-slate-800 border border-slate-700/50 rounded-xl px-4 py-3">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-amber-500/10 rounded-lg flex items-center justify-center">
+                <span className="text-amber-400 text-sm font-bold">R</span>
+              </div>
+              <div>
+                <span className="text-white font-semibold text-sm">Round {stats.currentRound}</span>
+                {stats.cooldownWords > 0 && (
+                  <span className="text-slate-500 text-xs ml-2">쿨다운 {stats.cooldownWords}개</span>
+                )}
+              </div>
+            </div>
+            <Link href="/history" className="text-xs text-slate-500 hover:text-slate-300 transition-colors">
+              전체 통계 →
+            </Link>
+          </div>
+
+          {/* Weak words */}
           {stats.weakWords.length > 0 && (
-            <div className="bg-white rounded-2xl p-4 shadow-sm border border-pink-100">
-              <h2 className="font-bold text-gray-700 mb-3 flex items-center gap-2">
-                <span>🔴</span> 취약 단어 (정답률 낮은 순)
+            <div className="bg-slate-800 border border-slate-700/50 rounded-xl p-4">
+              <h2 className="text-sm font-semibold text-slate-300 mb-3 flex items-center gap-2">
+                <span className="w-2 h-2 bg-rose-500 rounded-full inline-block" />
+                취약 단어
               </h2>
-              <div className="space-y-2">
+              <div className="space-y-0">
                 {stats.weakWords.map(word => {
                   const accuracy = word.total_attempts > 0
                     ? Math.round((word.total_correct / word.total_attempts) * 100)
                     : 0;
                   return (
-                    <div key={word.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+                    <div key={word.id} className="flex items-center justify-between py-2.5 border-b border-slate-700/30 last:border-0">
                       <div>
-                        <span className="font-medium text-gray-800">{word.japanese}</span>
-                        <span className="text-gray-400 mx-2">→</span>
-                        <span className="text-gray-600">{word.korean}</span>
+                        <span className="font-medium text-white text-sm">{word.japanese}</span>
+                        <span className="text-slate-500 text-xs mx-2">·</span>
+                        <span className="text-slate-400 text-sm">{word.korean}</span>
                       </div>
-                      <span className={`text-sm font-medium px-2 py-0.5 rounded-full ${
-                        accuracy < 30 ? 'bg-red-100 text-red-600' :
-                        accuracy < 60 ? 'bg-orange-100 text-orange-600' :
-                        'bg-yellow-100 text-yellow-600'
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded-md ${
+                        accuracy < 30 ? 'bg-rose-500/10 text-rose-400' :
+                        accuracy < 60 ? 'bg-amber-500/10 text-amber-400' :
+                        'bg-yellow-500/10 text-yellow-400'
                       }`}>{accuracy}%</span>
                     </div>
                   );
@@ -101,39 +128,40 @@ export default function Home() {
             </div>
           )}
 
-          {/* Category Stats */}
+          {/* Category stats */}
           {stats.categoryStats.length > 0 && (
-            <div className="bg-white rounded-2xl p-4 shadow-sm border border-pink-100">
-              <h2 className="font-bold text-gray-700 mb-3 flex items-center gap-2">
-                <span>📂</span> 카테고리별 현황
+            <div className="bg-slate-800 border border-slate-700/50 rounded-xl p-4">
+              <h2 className="text-sm font-semibold text-slate-300 mb-3 flex items-center gap-2">
+                <span className="w-2 h-2 bg-violet-500 rounded-full inline-block" />
+                카테고리별 정답률
               </h2>
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {stats.categoryStats.map(cat => (
                   <div key={cat.category} className="flex items-center gap-3">
-                    <span className="text-sm text-gray-600 w-20 truncate">{cat.category}</span>
-                    <div className="flex-1 bg-gray-100 rounded-full h-2">
+                    <span className="text-sm text-slate-400 w-20 truncate">{cat.category}</span>
+                    <div className="flex-1 bg-slate-700/50 rounded-full h-1.5">
                       <div
-                        className="bg-pink-400 h-2 rounded-full transition-all"
+                        className={`h-1.5 rounded-full transition-all ${
+                          cat.accuracy >= 70 ? 'bg-emerald-400' :
+                          cat.accuracy >= 40 ? 'bg-amber-400' :
+                          'bg-rose-400'
+                        }`}
                         style={{ width: `${cat.accuracy}%` }}
                       />
                     </div>
-                    <span className="text-xs text-gray-500 w-16 text-right">{cat.count}개 · {cat.accuracy}%</span>
+                    <span className="text-xs text-slate-500 w-16 text-right shrink-0">
+                      {cat.count}개 · {cat.accuracy}%
+                    </span>
                   </div>
                 ))}
               </div>
             </div>
           )}
 
-          {stats.cooldownWords > 0 && (
-            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-sm text-amber-700">
-              💤 현재 <strong>{stats.cooldownWords}개</strong> 단어가 쿨다운 중입니다. (다음 라운드 건너뛰기)
-            </div>
-          )}
-
           {stats.totalWords === 0 && (
-            <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 text-center">
-              <p className="text-blue-700 font-medium">아직 단어가 없어요!</p>
-              <Link href="/words" className="text-blue-500 underline text-sm mt-1 inline-block">
+            <div className="bg-slate-800 border border-slate-700/50 border-dashed rounded-xl p-6 text-center">
+              <p className="text-slate-400 text-sm">아직 등록된 단어가 없어요</p>
+              <Link href="/words" className="text-pink-400 text-sm mt-2 inline-block hover:text-pink-300">
                 단어 추가하러 가기 →
               </Link>
             </div>

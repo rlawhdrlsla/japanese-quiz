@@ -1,13 +1,12 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { Word } from '@/lib/types';
 
-type Phase = 'idle' | 'answering' | 'checking' | 'done';
+type Phase = 'idle' | 'quizzing' | 'done';
 
 interface QuizWord extends Word {
-  userAnswer: string;
   isCorrect: boolean | null;
 }
 
@@ -17,11 +16,12 @@ export default function QuizPage() {
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [round, setRound] = useState<number>(0);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [revealed, setRevealed] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [warning, setWarning] = useState('');
   const [finalScore, setFinalScore] = useState<{ correct: number; total: number } | null>(null);
-  const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   async function startQuiz() {
     setLoading(true);
@@ -32,54 +32,39 @@ export default function QuizPage() {
       const data = await res.json();
       if (!res.ok) { setError(data.error); return; }
 
-      setWords(data.words.map((w: Word) => ({ ...w, userAnswer: '', isCorrect: null })));
+      setWords(data.words.map((w: Word) => ({ ...w, isCorrect: null })));
       setSessionId(data.session_id);
       setRound(data.round);
       setCurrentIndex(0);
+      setRevealed(false);
       setFinalScore(null);
-      setPhase('answering');
+      setPhase('quizzing');
       if (data.warning) setWarning(data.warning);
-      setTimeout(() => inputRefs.current[0]?.focus(), 100);
     } finally {
       setLoading(false);
     }
   }
 
-  function handleAnswerChange(idx: number, value: string) {
-    setWords(prev => prev.map((w, i) => i === idx ? { ...w, userAnswer: value } : w));
-  }
+  function handleAnswer(correct: boolean) {
+    const newWords = words.map((w, i) => i === currentIndex ? { ...w, isCorrect: correct } : w);
+    setWords(newWords);
 
-  function handleKeyDown(e: React.KeyboardEvent, idx: number) {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      if (idx < words.length - 1) {
-        inputRefs.current[idx + 1]?.focus();
-        setCurrentIndex(idx + 1);
-      } else {
-        submitAnswers();
-      }
+    if (currentIndex < words.length - 1) {
+      setCurrentIndex(prev => prev + 1);
+      setRevealed(false);
+    } else {
+      submitQuiz(newWords);
     }
   }
 
-  function submitAnswers() {
-    setPhase('checking');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }
-
-  function toggleCorrect(idx: number, correct: boolean) {
-    setWords(prev => prev.map((w, i) => i === idx ? { ...w, isCorrect: correct } : w));
-  }
-
-  async function finishQuiz() {
+  async function submitQuiz(finalWords: QuizWord[]) {
     if (!sessionId) return;
-    setLoading(true);
-
-    const answers = words.map(w => ({
+    setSubmitting(true);
+    const answers = finalWords.map(w => ({
       word_id: w.id,
-      user_answer: w.userAnswer,
+      user_answer: '',
       is_correct: w.isCorrect === true,
     }));
-
     try {
       const res = await fetch('/api/quiz/complete', {
         method: 'POST',
@@ -92,216 +77,162 @@ export default function QuizPage() {
         setPhase('done');
       }
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   }
 
-  const allAnswered = words.length > 0 && words.every(w => w.userAnswer.trim() !== '');
-  const allChecked = words.length > 0 && words.every(w => w.isCorrect !== null);
-  const correctCount = words.filter(w => w.isCorrect === true).length;
+  const currentWord = words[currentIndex];
 
   if (phase === 'idle') {
     return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-gray-800">✏️ 퀴즈</h1>
+      <div className="space-y-5">
+        <h1 className="text-xl font-bold text-white">퀴즈</h1>
+
         {error && (
-          <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700">
+          <div className="bg-rose-500/10 border border-rose-500/20 rounded-xl p-4 text-rose-400 text-sm">
             {error}
             {error.includes('단어가 없습니다') && (
-              <Link href="/words" className="block mt-2 text-red-500 underline text-sm">
-                → 단어 추가하러 가기
+              <Link href="/words" className="block mt-2 text-rose-300 underline">
+                단어 추가하러 가기 →
               </Link>
             )}
           </div>
         )}
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-pink-100 text-center">
-          <div className="text-5xl mb-4">🎯</div>
-          <h2 className="text-xl font-bold text-gray-800 mb-2">랜덤 10문항 퀴즈</h2>
-          <p className="text-gray-500 text-sm mb-6">
-            한국어로 문제가 출제됩니다.<br />
-            일본어로 답을 입력하세요.
-          </p>
-          <div className="bg-pink-50 rounded-xl p-4 text-left text-sm text-gray-600 mb-6 space-y-2">
-            <p>📌 모든 답안 입력 후 제출하면 정답이 공개됩니다</p>
-            <p>📌 직접 O / X 체크를 하면 결과가 저장됩니다</p>
-            <p>📌 틀린 단어는 다음 라운드를 건너뛰고 그 다음에 다시 출제됩니다</p>
+
+        <div className="bg-slate-800 border border-slate-700 rounded-2xl p-8 text-center">
+          <div className="w-16 h-16 bg-pink-500/10 rounded-2xl flex items-center justify-center mx-auto mb-5">
+            <span className="text-3xl">🎯</span>
           </div>
+          <h2 className="text-xl font-bold text-white mb-2">랜덤 10문항</h2>
+          <p className="text-slate-400 text-sm mb-6">
+            카드를 보고 일본어를 떠올린 뒤<br />정답을 확인하고 직접 체크하세요
+          </p>
+          <ul className="text-left bg-slate-900 rounded-xl p-4 text-sm text-slate-400 mb-6 space-y-2">
+            <li>• 한국어 의미를 보고 일본어를 떠올리세요</li>
+            <li>• <span className="text-slate-300">정답 보기</span> 를 눌러 정답을 확인하세요</li>
+            <li>• <span className="text-emerald-400">○ 알았다</span> / <span className="text-rose-400">✕ 몰랐다</span> 로 직접 체크</li>
+            <li>• 틀린 단어는 한 라운드 건너뛰고 재출제</li>
+          </ul>
           <button
             onClick={startQuiz}
             disabled={loading}
-            className="w-full bg-pink-500 hover:bg-pink-600 text-white font-bold py-4 rounded-xl text-lg transition-colors disabled:opacity-50"
+            className="w-full bg-pink-500 hover:bg-pink-400 active:bg-pink-600 text-white font-bold py-4 rounded-xl text-lg transition-colors disabled:opacity-50"
           >
-            {loading ? '준비 중...' : '퀴즈 시작! 🌸'}
+            {loading ? '준비 중...' : '퀴즈 시작'}
           </button>
         </div>
       </div>
     );
   }
 
-  if (phase === 'answering') {
+  if (phase === 'quizzing') {
+    if (submitting) {
+      return (
+        <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
+          <div className="text-5xl animate-bounce">🌸</div>
+          <p className="text-slate-400">결과 저장 중...</p>
+        </div>
+      );
+    }
+
+    if (!currentWord) return null;
+
     return (
-      <div className="space-y-4">
+      <div className="space-y-5">
+        {/* Header */}
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold text-gray-800">✏️ 퀴즈 중</h1>
-          <span className="text-sm text-gray-400">Round {round}</span>
+          <span className="text-sm text-slate-500">Round {round}</span>
+          <span className="text-sm font-semibold text-white">{currentIndex + 1} <span className="text-slate-500">/ {words.length}</span></span>
         </div>
 
-        {warning && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-700">
-            ⚠️ {warning}
-          </div>
-        )}
-
-        <p className="text-sm text-gray-500">
-          {words.filter(w => w.userAnswer.trim()).length} / {words.length} 입력 완료
-          <span className="ml-2 text-gray-300">· Enter로 다음 문제</span>
-        </p>
-
         {/* Progress bar */}
-        <div className="bg-gray-100 rounded-full h-2">
+        <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
           <div
-            className="bg-pink-400 h-2 rounded-full transition-all"
-            style={{ width: `${(words.filter(w => w.userAnswer.trim()).length / words.length) * 100}%` }}
+            className="h-full bg-pink-500 rounded-full transition-all duration-500"
+            style={{ width: `${(currentIndex / words.length) * 100}%` }}
           />
         </div>
 
-        <div className="space-y-3">
-          {words.map((word, idx) => (
+        {/* Dot indicators */}
+        <div className="flex gap-1.5 justify-center">
+          {words.map((w, i) => (
             <div
-              key={word.id}
-              className={`bg-white rounded-xl p-4 shadow-sm border transition-colors ${
-                currentIndex === idx ? 'border-pink-400 shadow-pink-100' : 'border-pink-50'
+              key={i}
+              className={`rounded-full transition-all duration-300 ${
+                i === currentIndex
+                  ? 'w-5 h-2 bg-pink-400'
+                  : w.isCorrect === true
+                  ? 'w-2 h-2 bg-emerald-400'
+                  : w.isCorrect === false
+                  ? 'w-2 h-2 bg-rose-400'
+                  : 'w-2 h-2 bg-slate-700'
               }`}
-              onClick={() => { setCurrentIndex(idx); inputRefs.current[idx]?.focus(); }}
-            >
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-xs bg-pink-100 text-pink-600 px-2 py-0.5 rounded-full font-medium">
-                  {idx + 1}번
-                </span>
-                <span className="text-xs text-gray-400">{word.category}</span>
-              </div>
-              <p className="font-semibold text-gray-800 text-lg mb-3">{word.korean}</p>
-              <input
-                ref={el => { inputRefs.current[idx] = el; }}
-                type="text"
-                value={word.userAnswer}
-                onChange={e => handleAnswerChange(idx, e.target.value)}
-                onKeyDown={e => handleKeyDown(e, idx)}
-                onFocus={() => setCurrentIndex(idx)}
-                placeholder="일본어로 입력하세요..."
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-pink-400"
-              />
-            </div>
+            />
           ))}
         </div>
 
-        <div className="sticky bottom-4 pt-2">
-          <button
-            onClick={submitAnswers}
-            disabled={!allAnswered}
-            className={`w-full py-4 rounded-xl font-bold text-lg transition-colors ${
-              allAnswered
-                ? 'bg-pink-500 hover:bg-pink-600 text-white shadow-lg shadow-pink-200'
-                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-            }`}
-          >
-            {allAnswered ? '정답 확인하기 →' : `아직 ${words.length - words.filter(w => w.userAnswer.trim()).length}개 남았어요`}
-          </button>
-        </div>
-      </div>
-    );
-  }
+        {/* Card */}
+        <div className="bg-slate-800 border border-slate-700 rounded-2xl overflow-hidden">
+          {/* Card top */}
+          <div className="p-6 pb-0">
+            <div className="flex items-center gap-2 mb-5">
+              <span className="text-xs bg-slate-700 text-slate-300 px-2.5 py-1 rounded-full">
+                {currentWord.category}
+              </span>
+            </div>
 
-  if (phase === 'checking') {
-    return (
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold text-gray-800">정답 확인</h1>
-          <span className="text-sm font-medium text-pink-600">
-            {correctCount} / {words.length}
-          </span>
-        </div>
+            <div className="text-center py-6">
+              <p className="text-xs text-slate-500 mb-3 uppercase tracking-widest">이 단어의 일본어는?</p>
+              <p className="text-4xl font-bold text-white">{currentWord.korean}</p>
+            </div>
+          </div>
 
-        <div className="bg-pink-50 rounded-xl p-3 text-sm text-gray-600">
-          각 문제에서 O / X 버튼을 눌러 맞고 틀림을 직접 체크해주세요.
-        </div>
+          {/* Divider */}
+          <div className="border-t border-slate-700 mx-6 my-2" />
 
-        <div className="space-y-3">
-          {words.map((word, idx) => (
-            <div
-              key={word.id}
-              className={`bg-white rounded-xl p-4 shadow-sm border-2 transition-all ${
-                word.isCorrect === true
-                  ? 'border-emerald-300 bg-emerald-50'
-                  : word.isCorrect === false
-                  ? 'border-red-300 bg-red-50'
-                  : 'border-gray-100'
-              }`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">{idx + 1}번</span>
-                  </div>
-                  <p className="text-gray-500 text-sm">{word.korean}</p>
-                  <div className="mt-2 space-y-1">
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-xs text-gray-400 w-12">내 답:</span>
-                      <span className={`font-medium ${
-                        word.isCorrect === true ? 'text-emerald-700' : word.isCorrect === false ? 'text-red-600' : 'text-gray-700'
-                      }`}>
-                        {word.userAnswer || '(미입력)'}
-                      </span>
-                    </div>
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-xs text-gray-400 w-12">정답:</span>
-                      <span className="font-bold text-gray-800">{word.japanese}</span>
-                      {word.reading && (
-                        <span className="text-xs text-gray-400">({word.reading})</span>
-                      )}
-                    </div>
-                  </div>
+          {/* Answer area */}
+          <div className="p-6 pt-4">
+            {!revealed ? (
+              <button
+                onClick={() => setRevealed(true)}
+                className="w-full py-3.5 bg-slate-700 hover:bg-slate-600 active:bg-slate-600 text-slate-200 font-medium rounded-xl transition-colors"
+              >
+                정답 보기
+              </button>
+            ) : (
+              <div className="space-y-4">
+                <div className="text-center">
+                  <p className="text-3xl font-bold text-white mb-1">{currentWord.japanese}</p>
+                  {currentWord.reading && (
+                    <p className="text-slate-400">{currentWord.reading}</p>
+                  )}
                 </div>
-                <div className="flex gap-2 shrink-0 pt-1">
+                <div className="grid grid-cols-2 gap-3 pt-1">
                   <button
-                    onClick={() => toggleCorrect(idx, true)}
-                    className={`w-12 h-12 rounded-xl font-bold text-lg transition-all ${
-                      word.isCorrect === true
-                        ? 'bg-emerald-500 text-white scale-110 shadow-md'
-                        : 'bg-gray-100 text-gray-400 hover:bg-emerald-100 hover:text-emerald-600'
-                    }`}
+                    onClick={() => handleAnswer(false)}
+                    className="py-4 bg-rose-500/10 hover:bg-rose-500/20 active:bg-rose-500/30 text-rose-400 border border-rose-500/20 font-bold rounded-xl transition-colors"
                   >
-                    O
+                    <span className="text-2xl">✕</span>
+                    <span className="block text-xs font-normal mt-1 text-rose-400/70">몰랐다</span>
                   </button>
                   <button
-                    onClick={() => toggleCorrect(idx, false)}
-                    className={`w-12 h-12 rounded-xl font-bold text-lg transition-all ${
-                      word.isCorrect === false
-                        ? 'bg-red-500 text-white scale-110 shadow-md'
-                        : 'bg-gray-100 text-gray-400 hover:bg-red-100 hover:text-red-600'
-                    }`}
+                    onClick={() => handleAnswer(true)}
+                    className="py-4 bg-emerald-500/10 hover:bg-emerald-500/20 active:bg-emerald-500/30 text-emerald-400 border border-emerald-500/20 font-bold rounded-xl transition-colors"
                   >
-                    X
+                    <span className="text-2xl">○</span>
+                    <span className="block text-xs font-normal mt-1 text-emerald-400/70">알았다</span>
                   </button>
                 </div>
               </div>
-            </div>
-          ))}
+            )}
+          </div>
         </div>
 
-        <div className="sticky bottom-4 pt-2">
-          <button
-            onClick={finishQuiz}
-            disabled={!allChecked || loading}
-            className={`w-full py-4 rounded-xl font-bold text-lg transition-colors ${
-              allChecked && !loading
-                ? 'bg-pink-500 hover:bg-pink-600 text-white shadow-lg shadow-pink-200'
-                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-            }`}
-          >
-            {loading ? '저장 중...' : allChecked ? '결과 저장하기 →' : `아직 ${words.filter(w => w.isCorrect === null).length}개 체크 안함`}
-          </button>
-        </div>
+        {warning && (
+          <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-sm text-amber-400">
+            ⚠ {warning}
+          </div>
+        )}
       </div>
     );
   }
@@ -309,46 +240,67 @@ export default function QuizPage() {
   if (phase === 'done' && finalScore) {
     const pct = Math.round((finalScore.correct / finalScore.total) * 100);
     const wrongWords = words.filter(w => w.isCorrect === false);
+    const correctWords = words.filter(w => w.isCorrect === true);
 
     return (
       <div className="space-y-5">
-        <h1 className="text-2xl font-bold text-gray-800">결과</h1>
+        <h1 className="text-xl font-bold text-white">퀴즈 결과</h1>
 
-        <div className={`rounded-2xl p-6 text-center ${
-          pct >= 80 ? 'bg-emerald-50 border-2 border-emerald-200' :
-          pct >= 60 ? 'bg-yellow-50 border-2 border-yellow-200' :
-          'bg-red-50 border-2 border-red-200'
+        {/* Score card */}
+        <div className={`rounded-2xl p-8 text-center border ${
+          pct >= 80 ? 'bg-emerald-500/10 border-emerald-500/20' :
+          pct >= 60 ? 'bg-amber-500/10 border-amber-500/20' :
+          'bg-rose-500/10 border-rose-500/20'
         }`}>
-          <div className="text-5xl mb-3">
-            {pct >= 80 ? '🎉' : pct >= 60 ? '😊' : '💪'}
-          </div>
-          <div className={`text-5xl font-bold mb-2 ${
-            pct >= 80 ? 'text-emerald-600' : pct >= 60 ? 'text-yellow-600' : 'text-red-600'
+          <div className={`text-7xl font-bold mb-2 ${
+            pct >= 80 ? 'text-emerald-400' :
+            pct >= 60 ? 'text-amber-400' :
+            'text-rose-400'
           }`}>
-            {finalScore.correct} / {finalScore.total}
+            {pct}<span className="text-4xl">%</span>
           </div>
-          <div className="text-2xl font-semibold text-gray-600">{pct}%</div>
-          <p className="text-gray-500 text-sm mt-3">
-            {pct >= 80 ? '훌륭해요! 계속 이 기세로! 🌸' :
-             pct >= 60 ? '좋아요! 조금만 더 힘내요!' :
-             '틀린 단어를 다시 복습해봐요!'}
+          <p className="text-slate-400 text-sm mb-3">
+            {finalScore.correct} / {finalScore.total} 정답
+          </p>
+          <p className="text-slate-200 text-sm">
+            {pct >= 80 ? '훌륭해요! 이 기세로 계속!' :
+             pct >= 60 ? '잘하고 있어요. 조금만 더!' :
+             '틀린 단어를 다시 복습해봐요'}
           </p>
         </div>
 
+        {/* Correct / Wrong count */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 text-center">
+            <div className="text-3xl font-bold text-emerald-400">{correctWords.length}</div>
+            <div className="text-xs text-slate-500 mt-1">맞힌 단어</div>
+          </div>
+          <div className="bg-rose-500/10 border border-rose-500/20 rounded-xl p-4 text-center">
+            <div className="text-3xl font-bold text-rose-400">{wrongWords.length}</div>
+            <div className="text-xs text-slate-500 mt-1">틀린 단어</div>
+          </div>
+        </div>
+
+        {/* Wrong words */}
         {wrongWords.length > 0 && (
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-red-100">
-            <h2 className="font-bold text-red-600 mb-3">❌ 틀린 단어 ({wrongWords.length}개)</h2>
-            <p className="text-xs text-gray-400 mb-3">이 단어들은 다음 라운드를 건너뛰고 그 다음 라운드에 다시 출제됩니다.</p>
-            <div className="space-y-2">
-              {wrongWords.map(word => (
-                <div key={word.id} className="flex items-baseline justify-between py-2 border-b border-gray-50 last:border-0">
+          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold text-rose-400">틀린 단어</h2>
+              <span className="text-xs text-slate-500">다음 라운드 재출제</span>
+            </div>
+            <div className="space-y-0">
+              {wrongWords.map((word, i) => (
+                <div
+                  key={word.id}
+                  className="flex items-center justify-between py-3 border-b border-slate-700/50 last:border-0"
+                >
                   <div>
-                    <span className="font-medium text-gray-800">{word.japanese}</span>
-                    {word.reading && <span className="text-xs text-gray-400 ml-1">({word.reading})</span>}
-                    <span className="text-gray-400 mx-2">→</span>
-                    <span className="text-gray-600">{word.korean}</span>
+                    <span className="font-medium text-white">{word.japanese}</span>
+                    {word.reading && (
+                      <span className="text-xs text-slate-500 ml-2">({word.reading})</span>
+                    )}
                   </div>
-                  <span className="text-xs text-red-400 shrink-0">내 답: {word.userAnswer || '미입력'}</span>
+                  <span className="text-slate-400 text-sm">{word.korean}</span>
                 </div>
               ))}
             </div>
@@ -356,22 +308,24 @@ export default function QuizPage() {
         )}
 
         {wrongWords.length === 0 && (
-          <div className="bg-emerald-50 rounded-2xl p-4 text-center text-emerald-700 border border-emerald-200">
-            🎊 만점! 모든 단어를 정확히 알고 있어요!
+          <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-5 text-center">
+            <p className="text-emerald-400 font-semibold">만점!</p>
+            <p className="text-slate-400 text-sm mt-1">모든 단어를 알고 있어요 🎊</p>
           </div>
         )}
 
-        <div className="flex gap-3">
+        {/* Actions */}
+        <div className="flex gap-3 pt-1">
           <button
             onClick={startQuiz}
             disabled={loading}
-            className="flex-1 bg-pink-500 hover:bg-pink-600 text-white font-bold py-4 rounded-xl transition-colors"
+            className="flex-1 bg-pink-500 hover:bg-pink-400 text-white font-bold py-4 rounded-xl transition-colors disabled:opacity-50"
           >
-            {loading ? '준비 중...' : '다시 퀴즈 시작'}
+            {loading ? '준비 중...' : '다시 시작'}
           </button>
           <Link
             href="/"
-            className="px-6 py-4 bg-white border border-pink-200 text-pink-600 font-medium rounded-xl hover:bg-pink-50 transition-colors"
+            className="px-6 py-4 bg-slate-800 border border-slate-700 text-slate-300 font-medium rounded-xl hover:bg-slate-700 transition-colors whitespace-nowrap"
           >
             홈으로
           </Link>
