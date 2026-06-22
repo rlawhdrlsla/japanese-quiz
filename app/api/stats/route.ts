@@ -93,13 +93,13 @@ export async function GET(req: NextRequest) {
       LIMIT 30
     `).all(user_id) as (Word & { days_since_correct: number; last_correct_at: string })[];
 
-    // Top 10 most-missed words
+    // Top 10 most-missed words (at least 1 wrong attempt)
     const topWrongWords = db.prepare(`
       SELECT w.*, uws.total_correct, uws.total_attempts,
         (uws.total_attempts - uws.total_correct) as wrong_count
       FROM user_word_stats uws
       JOIN words w ON w.id = uws.word_id
-      WHERE uws.user_id = ? AND uws.total_attempts >= 2 AND uws.total_correct < uws.total_attempts
+      WHERE uws.user_id = ? AND uws.total_correct < uws.total_attempts
       ORDER BY wrong_count DESC, CAST(uws.total_correct AS FLOAT) / uws.total_attempts ASC
       LIMIT 10
     `).all(user_id) as (Word & { wrong_count: number })[];
