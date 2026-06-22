@@ -143,8 +143,20 @@ export default function QuizPage() {
     }
   }
 
-  function abandonQuiz() {
+  async function abandonQuiz() {
+    if (!user) return;
+    setResetting(true);
     clearSavedSession();
+    try {
+      await fetch('/api/quiz/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: user.user_id }),
+      });
+      await refreshUser();
+    } finally {
+      setResetting(false);
+    }
     setPhase('idle');
     setWords([]);
     setSessionId(null);
@@ -248,37 +260,35 @@ export default function QuizPage() {
           </button>
         </div>
 
-        {user.current_round > 0 && (
-          <div className="bg-slate-800 border border-slate-700/50 rounded-xl p-4">
-            {showResetConfirm ? (
-              <div>
-                <p className="text-slate-300 text-sm mb-3">모든 진행상황이 초기화됩니다. 계속하시겠어요?</p>
-                <div className="flex gap-2">
-                  <button
-                    onClick={resetRound}
-                    disabled={resetting}
-                    className="flex-1 py-2.5 bg-rose-500 hover:bg-rose-400 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
-                  >
-                    {resetting ? '초기화 중...' : '초기화'}
-                  </button>
-                  <button
-                    onClick={() => setShowResetConfirm(false)}
-                    className="flex-1 py-2.5 bg-slate-700 text-slate-300 text-sm font-medium rounded-lg hover:bg-slate-600 transition-colors"
-                  >
-                    취소
-                  </button>
-                </div>
+        <div className="bg-slate-800 border border-slate-700/50 rounded-xl p-4">
+          {showResetConfirm ? (
+            <div>
+              <p className="text-slate-300 text-sm mb-3">라운드 · 사이클 · 쿨다운이 전부 초기화됩니다. 계속하시겠어요?</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={resetRound}
+                  disabled={resetting}
+                  className="flex-1 py-2.5 bg-rose-500 hover:bg-rose-400 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {resetting ? '초기화 중...' : '초기화'}
+                </button>
+                <button
+                  onClick={() => setShowResetConfirm(false)}
+                  className="flex-1 py-2.5 bg-slate-700 text-slate-300 text-sm font-medium rounded-lg hover:bg-slate-600 transition-colors"
+                >
+                  취소
+                </button>
               </div>
-            ) : (
-              <button
-                onClick={() => setShowResetConfirm(true)}
-                className="w-full text-sm text-slate-500 hover:text-slate-300 transition-colors"
-              >
-                처음부터 다시 시작 →
-              </button>
-            )}
-          </div>
-        )}
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowResetConfirm(true)}
+              className="w-full text-sm text-slate-500 hover:text-slate-300 transition-colors"
+            >
+              라운드 초기화 (1라운드부터 다시) →
+            </button>
+          )}
+        </div>
       </div>
     );
   }
@@ -317,13 +327,15 @@ export default function QuizPage() {
 
         {showAbandonConfirm && (
           <div className="bg-slate-800 border border-amber-500/20 rounded-xl p-4">
-            <p className="text-slate-300 text-sm mb-3">이 라운드를 포기하면 진행 중인 데이터가 사라집니다.</p>
+            <p className="text-slate-300 text-sm mb-1">퀴즈를 포기하면 <span className="text-amber-400 font-medium">1라운드부터 전체 초기화</span>됩니다.</p>
+            <p className="text-slate-500 text-xs mb-3">라운드 · 사이클 · 쿨다운 모두 리셋</p>
             <div className="flex gap-2">
               <button
                 onClick={abandonQuiz}
-                className="flex-1 py-2 bg-amber-500/20 text-amber-400 text-sm font-medium rounded-lg hover:bg-amber-500/30 transition-colors"
+                disabled={resetting}
+                className="flex-1 py-2 bg-amber-500/20 text-amber-400 text-sm font-medium rounded-lg hover:bg-amber-500/30 transition-colors disabled:opacity-50"
               >
-                포기하고 나가기
+                {resetting ? '초기화 중...' : '포기하고 초기화'}
               </button>
               <button
                 onClick={() => setShowAbandonConfirm(false)}
