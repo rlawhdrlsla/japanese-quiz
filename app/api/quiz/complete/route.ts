@@ -31,12 +31,13 @@ export async function POST(req: NextRequest) {
 
         if (answer.is_correct) {
           db.prepare(`
-            INSERT INTO user_word_stats (user_id, word_id, total_correct, total_attempts)
-            VALUES (?, ?, 1, 1)
+            INSERT INTO user_word_stats (user_id, word_id, total_correct, total_attempts, last_correct_at)
+            VALUES (?, ?, 1, 1, CURRENT_TIMESTAMP)
             ON CONFLICT(user_id, word_id) DO UPDATE SET
               total_correct = total_correct + 1,
               total_attempts = total_attempts + 1,
-              skip_until_round = 0
+              skip_until_round = 0,
+              last_correct_at = CURRENT_TIMESTAMP
           `).run(user_id, answer.word_id);
         } else {
           db.prepare(`

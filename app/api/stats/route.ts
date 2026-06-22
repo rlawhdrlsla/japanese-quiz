@@ -20,7 +20,6 @@ export async function GET(req: NextRequest) {
       'SELECT COUNT(*) as c FROM quiz_sessions WHERE completed_at IS NOT NULL AND user_id = ?'
     ).get(user_id) as { c: number }).c;
 
-    // Per-user accuracy
     const accRow = db.prepare(
       'SELECT SUM(total_correct) as correct, SUM(total_attempts) as attempts FROM user_word_stats WHERE user_id = ?'
     ).get(user_id) as { correct: number; attempts: number };
@@ -28,14 +27,14 @@ export async function GET(req: NextRequest) {
       ? Math.round((accRow.correct / accRow.attempts) * 100)
       : 0;
 
-    // Weak words: lowest accuracy, min 1 attempt
+    // Weak words TOP 10
     const weakWords = db.prepare(`
       SELECT w.*, uws.total_correct, uws.total_attempts
       FROM words w
       JOIN user_word_stats uws ON uws.word_id = w.id AND uws.user_id = ?
       WHERE uws.total_attempts > 0
-      ORDER BY CAST(uws.total_correct AS FLOAT) / uws.total_attempts ASC
-      LIMIT 5
+      ORDER BY CAST(uws.total_correct AS FLOAT) / uws.total_attempts ASC, uws.total_attempts DESC
+      LIMIT 10
     `).all(user_id) as Word[];
 
     const strongWords = db.prepare(`
@@ -51,7 +50,6 @@ export async function GET(req: NextRequest) {
       'SELECT * FROM quiz_sessions WHERE completed_at IS NOT NULL AND user_id = ? ORDER BY created_at DESC LIMIT 10'
     ).all(user_id) as QuizSession[];
 
-    // Category stats from per-user data
     const categoryStats = db.prepare(`
       SELECT w.category, COUNT(DISTINCT w.id) as count,
         CASE WHEN SUM(uws.total_attempts) > 0
@@ -68,6 +66,44 @@ export async function GET(req: NextRequest) {
 
     const totalRoundsInCycle = totalWords > 0 ? Math.ceil(totalWords / 10) : 0;
 
+    // Daily activity for heatmap (last 84 days)
+    const dailyActivity = db.prepare(`
+      SELECT
+        date(created_at) as date,
+        COUNT(*) as sessions,
+        SUM(total_questions) as questions
+      FROM quiz_sessions
+      WHERE user_id = ?
+        AND completed_at IS NOT NULL
+        AND created_at >= date('now', '-84 days')
+      GROUP BY date(created_at)
+    `).all(user_id) as { date: string; sessions: number; questions: number }[];
+
+    // SRS review recommendations (words last correct >= 3 days ago)
+    const reviewWords = db.prepare(`
+      SELECT w.*, uws.total_correct, uws.total_attempts, uws.last_correct_at,
+        CAST((julianday('now') - julianday(uws.last_correct_at)) AS INTEGER) as days_since_correct
+      FROM user_word_stats uws
+      JOIN words w ON w.id = uws.word_id
+      WHERE uws.user_id = ?
+        AND uws.last_correct_at IS NOT NULL
+        AND uws.total_correct > 0
+        AND (julianday('now') - julianday(uws.last_correct_at)) >= 3
+      ORDER BY uws.last_correct_at ASC
+      LIMIT 30
+    `).all(user_id) as (Word & { days_since_correct: number; last_correct_at: string })[];
+
+    // Top 10 most-missed words
+    const topWrongWords = db.prepare(`
+      SELECT w.*, uws.total_correct, uws.total_attempts,
+        (uws.total_attempts - uws.total_correct) as wrong_count
+      FROM user_word_stats uws
+      JOIN words w ON w.id = uws.word_id
+      WHERE uws.user_id = ? AND uws.total_attempts >= 2 AND uws.total_correct < uws.total_attempts
+      ORDER BY wrong_count DESC, CAST(uws.total_correct AS FLOAT) / uws.total_attempts ASC
+      LIMIT 10
+    `).all(user_id) as (Word & { wrong_count: number })[];
+
     return NextResponse.json({
       totalWords,
       totalSessions,
@@ -80,6 +116,9 @@ export async function GET(req: NextRequest) {
       cooldownWords,
       cycleSeenCount: seenIds.length,
       totalRoundsInCycle,
+      dailyActivity,
+      reviewWords,
+      topWrongWords,
     });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });

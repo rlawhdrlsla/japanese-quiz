@@ -90,9 +90,12 @@ function initSchema(db: Database.Database) {
   // Add user_id column to quiz_sessions if not exists
   try {
     db.exec('ALTER TABLE quiz_sessions ADD COLUMN user_id INTEGER REFERENCES users(id)');
-  } catch {
-    // Column already exists
-  }
+  } catch { /* already exists */ }
+
+  // Add last_correct_at for SRS
+  try {
+    db.exec('ALTER TABLE user_word_stats ADD COLUMN last_correct_at DATETIME DEFAULT NULL');
+  } catch { /* already exists */ }
 }
 
 export function getCurrentRound(): number {
